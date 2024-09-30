@@ -4,13 +4,12 @@ use crate::ecs_core::system::System;
 use crate::engine_core::world::World;
 use crate::LuminaEngine;
 
-pub struct EngineLoop<'window> {
-    core: LuminaEngine<'window>,
-    systems: Vec<Box<dyn System>>,
+pub struct EngineLoop {
+    core: LuminaEngine,
     world: World,
 }
 
-impl<'window> EngineLoop<'window> {
+impl EngineLoop {
     pub fn new(core: LuminaEngine) -> Self {
         let systems: Vec<Box<dyn System>> = vec![
             Box::new(InputSystem::new()),

@@ -9,6 +9,7 @@ pub struct World<'a> {
     pub entities: EntityManager,
     pub components: ComponentManager,
     pub resources: ResourceManager<'a>,
+    systems: Vec<Box<dyn System>>,
 }
 
 impl<'a> World<'a> {
