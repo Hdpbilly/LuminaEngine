@@ -89,8 +89,6 @@ impl ComponentManagerTrait for ComponentManager {
     }
 }
 
-
-
 pub struct ComponentStorage<C> {
     components: HashMap<Entity, C>,
 }

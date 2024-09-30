@@ -5,15 +5,13 @@ use crate::engine_core::world::World;
 use crate::LuminaEngine;
 
 pub struct EngineLoop {
-    core: LuminaEngine,
-    world: World,
+    core: &LuminaEngine,
+    world: &World,
 }
 
 impl EngineLoop {
     pub fn new(core: LuminaEngine) -> Self {
-        let systems: Vec<Box<dyn System>> = vec![
-            Box::new(InputSystem::new()),
-        ];
+
     }
 
     pub fn start(self) {
