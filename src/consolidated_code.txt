@@ -1,0 +1,786 @@
+
+--- D:\HIR\luminaengine\src\lib.rs ---
+
+// lib.rs
+mod components;
+mod engine_core;
+mod ecs_core;
+mod systems;
+mod tracing;
+use engine_core::wgpures::WebGPUResources;
+use engine_core::temporal::{self, AdvancedTime};
+use engine_core::networking::NetworkResources;
+use engine_core::rendering::RenderSystem;
+use engine_core::inputhandler::InputHandler;
+use engine_core::webworker::WebWorker;
+use engine_core::world::World;
+pub use tracing::init_tracing;
+use wasm_bindgen::prelude::*;
+use web_sys::HtmlCanvasElement;
+use std::rc::Rc;
+
+
+pub struct LuminaEngine {
+    pub webgpu_resource: WebGPUResources,
+    pub temporal: AdvancedTime,
+    pub rendering: RenderSystem,
+    pub networking: NetworkResources,
+    pub inputhandler: InputHandler,
+    pub workers: WebWorker,
+}
+
+impl LuminaEngine {
+    pub async fn new(canvas: HtmlCanvasElement) -> Self {
+        let webgpu_resource = WebGPUResources::new(canvas).await.unwrap();
+        let temporal = AdvancedTime::new(10, 10);
+        let rendering = RenderSystem::new();
+        let networking = NetworkResources::new();
+        let inputhandler = InputHandler::new();
+        let workers = WebWorker::new();
+
+        Self {
+            webgpu_resource,
+            temporal,
+            rendering,
+            networking,
+            inputhandler,
+            workers,
+        }
+    }
+}
+
+
+#[wasm_bindgen]
+pub async fn initalize_client(canvas: HtmlCanvasElement) {
+    let engine = Rc::new(LuminaEngine::new(canvas).await); 
+    let world = World::new(&engine);
+}
+
+--- D:\HIR\luminaengine\src\tracing.rs ---
+
+// tracing.rs
+use tracing_wasm;
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen(start)]
+pub fn start() {
+    console_error_panic_hook::set_once();
+    tracing_wasm::set_as_global_default_with_config(
+       tracing_wasm::WASMLayerConfigBuilder::default()
+            .set_max_level(tracing::Level::TRACE)
+            .build()
+    );
+}
+
+#[wasm_bindgen] // cna likely get rid of this whhole thing 
+pub fn init_tracing() {
+    start();
+}
+
+--- D:\HIR\luminaengine\src\components\input_component.rs ---
+
+// input_componenet.rs
+use std::fmt::Debug;
+
+#[derive(Debug)]
+pub struct InputComponent {
+
+}
+
+impl InputComponent {
+    pub fn new() -> Self {
+        Self {
+            
+        }
+    }
+}
+
+--- D:\HIR\luminaengine\src\components\mod.rs ---
+
+pub mod input_component;
+
+--- D:\HIR\luminaengine\src\ecs_core\component.rs ---
+
+// component.rs
+use std::collections::HashMap;
+use std::any::{Any, TypeId};
+use crate::ecs_core::entity::Entity;
+
+pub trait Component: Any + Sized {}
+impl<T: Any + Sized> Component for T {}
+
+pub trait ComponentManagerTrait {
+    fn register_component<C: Component>(&mut self);
+    fn insert_component<C: Component>(&mut self, entity: Entity, component: C);
+    fn remove_component<C: Component>(&mut self, entity: &Entity);
+    fn get_component<C: Component>(&self, entity: &Entity) -> Option<&C>;
+    fn get_component_mut<C: Component>(&mut self, entity: &Entity) -> Option<&mut C>;
+}
+
+pub struct ComponentManager {
+    storages: HashMap<TypeId, Box<dyn Any>>,
+}
+
+impl ComponentManager {
+    pub fn new() -> Self {
+        Self { storages: HashMap::new(), }
+    }
+
+    /// Registers a new component type by inserting an empty storage for it.
+    pub fn register_component<C: Component>(&mut self) {
+        let type_id = TypeId::of::<C>();
+        self.storages.entry(type_id).or_insert_with(|| Box::new(ComponentStorage::<C>::new()));
+    }
+
+     /// Retrieves an immutable reference to the component storage for type `C`.
+    pub fn storage<C: Component>(&self) -> Option<&ComponentStorage<C>> {
+        self.storages.get(&TypeId::of::<C>())
+            .and_then(|boxed_storage| boxed_storage.downcast_ref::<ComponentStorage<C>>())
+    }
+
+    /// Retrieves a mutable reference to the component storage for type `C`.
+    pub fn storage_mut<C: Component>(&mut self) -> Option<&mut ComponentStorage<C>> {
+        self.storages.get_mut(&TypeId::of::<C>())
+            .and_then(|boxed_storage| boxed_storage.downcast_mut::<ComponentStorage<C>>())
+    }
+
+    /// Inserts a component `C` for the given `Entity`.
+    pub fn insert<C: Component>(&mut self, entity: Entity, component: C) {
+        self.register_component::<C>();
+        if let Some(storage) = self.storage_mut::<C>() {
+            storage.insert(entity, component);
+        }
+    }
+
+    /// Removes a component `C` from the given `Entity`.
+    pub fn remove<C: Component>(&mut self, entity: &Entity) {
+        if let Some(storage) = self.storage_mut::<C>() {
+            storage.remove(entity);
+        }
+    }
+
+    /// Gets an immutable reference to component `C` of the given `Entity`.
+    pub fn get<C: Component>(&self, entity: &Entity) -> Option<&C> {
+        self.storage::<C>()?.get(entity)
+    }
+
+    /// Gets a mutable reference to component `C` of the given `Entity`.
+    pub fn get_mut<C: Component>(&mut self, entity: &Entity) -> Option<&mut C> {
+        self.storage_mut::<C>()?.get_mut(entity)
+    }
+}
+
+impl ComponentManagerTrait for ComponentManager {
+    fn register_component<C: Component>(&mut self) {
+        self.register_component::<C>();
+    }
+
+    fn insert_component<C: Component>(&mut self, entity: Entity, component: C) {
+        self.insert(entity, component);
+    }
+
+    fn remove_component<C: Component>(&mut self, entity: &Entity) {
+        self.remove::<C>(entity);
+    }
+
+    fn get_component<C: Component>(&self, entity: &Entity) -> Option<&C> {
+        self.get::<C>(entity)
+    }
+
+    fn get_component_mut<C: Component>(&mut self, entity: &Entity) -> Option<&mut C> {
+        self.get_mut::<C>(entity)
+    }
+}
+
+
+
+pub struct ComponentStorage<C> {
+    components: HashMap<Entity, C>,
+}
+
+impl<C> ComponentStorage<C> {
+    pub fn new() -> Self {
+        Self {
+            components: HashMap::new(),
+        }
+    }
+
+    pub fn insert(&mut self, entity: Entity, component: C) {
+        self.components.insert(entity, component);
+    }
+
+    pub fn remove(&mut self, entity: &Entity) {
+        self.components.remove(entity);
+    }
+
+    pub fn get(&self, entity: &Entity) -> Option<&C> {
+        self.components.get(entity)
+    }
+
+    pub fn get_mut(&mut self, entity: &Entity) -> Option<&mut C> {
+        self.components.get_mut(entity)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&Entity, &C)> {
+        self.components.iter()
+    }
+}
+
+
+--- D:\HIR\luminaengine\src\ecs_core\entity.rs ---
+
+// entity.rs
+
+pub type Entity = u32;
+
+pub struct EntityManager {
+    next_entity: Entity,
+    recycled_entities: Vec<Entity>,
+}
+
+impl EntityManager {
+    pub fn new() -> Self {
+        Self {
+            next_entity: 0,
+            recycled_entities: Vec::new(),
+        }
+    }
+
+    pub fn create_entity(&mut self) -> Entity {
+        if let Some(entity) = self.recycled_entities.pop() {
+            entity
+        } else {
+            let entity = self.next_entity;
+            self.next_entity += 1;
+            entity
+        }
+    }
+
+    pub fn destroy_entity(&mut self, entity: Entity) {
+        self.recycled_entities.push(entity);
+    }
+}
+
+--- D:\HIR\luminaengine\src\ecs_core\mod.rs ---
+
+pub mod component;
+pub mod entity;
+pub mod system;
+pub mod resource;
+
+--- D:\HIR\luminaengine\src\ecs_core\resource.rs ---
+
+// resource.rs
+use std::rc::Rc;
+use std::any::Any;
+use std::collections::HashMap;
+use std::any::TypeId;
+
+pub struct ResourceManager<'a> {
+    resources: HashMap<TypeId, &'a dyn Any>,
+}
+
+impl<'a> ResourceManager<'a> {
+    pub fn new() -> Self {
+        Self {
+            resources: HashMap::new(),
+        }
+    }
+
+    pub fn insert<T: 'static + Any>(&mut self, resource: &'a T) {
+        self.resources.insert(TypeId::of::<T>(), resource);
+    }
+
+    pub fn get<T: 'static + Any>(&self) -> Option<&'a T> {
+        self.resources
+            .get(&TypeId::of::<T>())
+            .and_then(|resource| resource.downcast_ref::<T>())
+    }
+}
+
+--- D:\HIR\luminaengine\src\ecs_core\system.rs ---
+
+// system.rs
+use crate::engine_core::world::World;
+
+pub trait System {
+    fn update(&mut self, world: &mut World);
+}
+
+--- D:\HIR\luminaengine\src\engine_core\core_loop.rs ---
+
+// core_loop.rs
+use crate::systems::input_system::InputSystem;
+use crate::ecs_core::system::System;
+use crate::engine_core::world::World;
+use crate::LuminaEngine;
+
+pub struct EngineLoop<'window> {
+    core: LuminaEngine<'window>,
+    systems: Vec<Box<dyn System>>,
+    world: World,
+}
+
+impl<'window> EngineLoop<'window> {
+    pub fn new(core: LuminaEngine) -> Self {
+        let systems: Vec<Box<dyn System>> = vec![
+            Box::new(InputSystem::new()),
+        ];
+    }
+
+    pub fn start(self) {
+
+    }
+
+    async fn run_loop(mut game_loop: Self) {
+
+        }
+    }
+
+--- D:\HIR\luminaengine\src\engine_core\inputhandler.rs ---
+
+pub struct InputHandler {
+
+}
+
+impl InputHandler {
+    pub fn new() -> Self {
+        Self { }    
+    }
+}
+
+--- D:\HIR\luminaengine\src\engine_core\mod.rs ---
+
+pub mod core_loop;
+pub mod world;
+pub mod wgpures;
+pub mod temporal;
+pub mod networking;
+pub mod rendering;
+pub mod webworker;
+pub mod inputhandler;
+
+--- D:\HIR\luminaengine\src\engine_core\networking.rs ---
+
+pub struct NetworkResources {
+
+}
+
+impl NetworkResources {
+    pub fn new() -> Self {
+        Self { }
+    }
+}
+
+--- D:\HIR\luminaengine\src\engine_core\rendering.rs ---
+
+pub struct RenderSystem {
+
+}
+
+impl RenderSystem {
+    pub fn new() -> Self {
+        Self { }
+    }
+}
+
+--- D:\HIR\luminaengine\src\engine_core\temporal.rs ---
+
+// temporal.rs
+
+use std::collections::BinaryHeap; //for event que
+use std::cmp::Ordering;
+use web_sys::Performance;
+use tracing::{info, error};
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MixedRadixTime {
+    frame_count: u64,
+    ticks: u64,
+    sub_ticks: u32,
+    milliseconds: u32,
+}
+
+impl MixedRadixTime {
+    pub fn new() -> Self {
+        Self { frame_count: 0, ticks: 0, sub_ticks: 0, milliseconds: 0 }
+    }
+
+    pub fn advance(&mut self, delta_ms: u32, sub_ticks_per_tick: u32, ms_per_sub_tick: u32) {
+        self.frame_count += 1;
+        self.milliseconds += delta_ms;
+        let new_sub_ticks = self.milliseconds / ms_per_sub_tick;
+        self.milliseconds %= ms_per_sub_tick;
+        self.sub_ticks += new_sub_ticks;
+        let new_ticks = self.sub_ticks / sub_ticks_per_tick;
+        self.sub_ticks %= sub_ticks_per_tick;
+        self.ticks += new_ticks as u64;
+    }
+}
+
+struct TemporalEvent {
+    time: MixedRadixTime,
+    id: u64,
+    payload: Box<dyn Fn()>,
+}
+
+impl PartialEq for TemporalEvent { 
+    fn eq(&self, other: &Self) -> bool {
+        self.time == other.time && self.id == other.id
+    }
+}
+
+impl Eq for TemporalEvent {}
+
+impl PartialOrd for TemporalEvent {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TemporalEvent {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // (min-heap behavior)
+        other.time.cmp(&self.time)
+            .then_with(|| other.id.cmp(&self.id))
+    }
+}
+
+pub struct AdvancedTime {
+    mixed_time: MixedRadixTime,
+    time_scale: f32,
+    paused: bool,
+    performance: Performance,
+    last_timestamp: f64,
+    event_queue: BinaryHeap<TemporalEvent>,
+    next_event_id: u64,
+    sub_ticks_per_tick: u32,
+    ms_per_sub_tick: u32,
+    last_delta_ms: u32,
+}
+
+impl AdvancedTime {
+    pub fn new(sub_ticks_per_tick: u32, ms_per_sub_tick: u32) -> Self {
+        let performance = web_sys::window()
+            .expect("no global accessible window exists")
+            .performance()
+            .expect("window should have performance");
+
+        Self {
+            mixed_time: MixedRadixTime::new(),
+            time_scale: 1.0,
+            paused: false,
+            performance,
+            last_timestamp: 0.0,
+            event_queue: BinaryHeap::new(),
+            next_event_id: 0,
+            sub_ticks_per_tick,
+            ms_per_sub_tick,
+            last_delta_ms: 0,
+        } 
+    }
+
+    pub fn update(&mut self) {
+        if self.paused {
+            return;
+        }
+
+        let current_timestamp = self.performance.now();
+        if self.last_timestamp == 0.0 {
+            self.last_timestamp = current_timestamp;
+            return;
+        }
+
+        let delta_ms = ((current_timestamp - self.last_timestamp) * self.time_scale as f64) as u32;
+        self.last_timestamp = current_timestamp;
+        self.last_delta_ms = delta_ms;
+        self.mixed_time.advance(delta_ms, self.sub_ticks_per_tick, self.ms_per_sub_tick);
+
+        self.process_events();
+    }
+
+    pub fn schedule_event<F>(&mut self, delay: MixedRadixTime, payload: F) -> u64
+    where
+        F: Fn() + 'static,
+    {
+        let event_time = MixedRadixTime {
+            frame_count: self.mixed_time.frame_count + delay.frame_count,
+            ticks: self.mixed_time.ticks + delay.ticks,
+            sub_ticks: self.mixed_time.sub_ticks + delay.sub_ticks,
+            milliseconds: self.mixed_time.milliseconds + delay.milliseconds,
+        };
+    
+        let id = self.next_event_id;
+        self.next_event_id += 1;
+    
+        self.event_queue.push(TemporalEvent {
+            time: event_time,
+            id,
+            payload: Box::new(payload),
+        });
+    
+        id    
+    }
+
+    pub fn get_delta_time(&self) -> u32 {
+        self.last_delta_ms
+    }
+
+fn process_events(&mut self) {
+    while let Some(event) = self.event_queue.peek() {
+        if event.time.frame_count > self.mixed_time.frame_count {
+            break;
+        }
+        if event.time.frame_count == self.mixed_time.frame_count
+            && (event.time.ticks > self.mixed_time.ticks
+                || (event.time.ticks == self.mixed_time.ticks
+                    && (event.time.sub_ticks > self.mixed_time.sub_ticks
+                        || (event.time.sub_ticks == self.mixed_time.sub_ticks
+                            && event.time.milliseconds > self.mixed_time.milliseconds))))
+        {
+            break;
+        }
+        
+        let event = self.event_queue.pop().unwrap();
+        (event.payload)();
+    }
+}
+
+    pub fn set_time_scale(&mut self, scale: f32) {
+        self.time_scale = scale.max(0.0);
+    }
+
+    pub fn pause(&mut self) {
+        self.paused = true;
+    }
+
+    pub fn resume(&mut self) {
+        self.paused = false;
+        self.last_timestamp = self.performance.now();
+    }
+
+    pub fn get_interpolation_factor(&self) -> f32 {
+        let sub_ticks_fraction = self.mixed_time.sub_ticks as f32 / self.sub_ticks_per_tick as f32;
+        let milliseconds_fraction = self.mixed_time.milliseconds as f32 / (self.sub_ticks_per_tick * self.ms_per_sub_tick) as f32;
+        
+        sub_ticks_fraction + milliseconds_fraction
+    }
+}
+
+
+
+--- D:\HIR\luminaengine\src\engine_core\webworker.rs ---
+
+pub struct WebWorker {
+
+}
+
+impl WebWorker {
+    pub fn new() -> Self {
+        Self { }    
+    }
+}
+
+--- D:\HIR\luminaengine\src\engine_core\wgpures.rs ---
+
+// resources.rs
+// non ECS based resources needed for the core of the engine... eg webGPUResources struct.
+
+use wasm_bindgen::JsValue;
+use web_sys::HtmlCanvasElement;
+use wgpu::{self, Backends, Surface};
+use tracing::{error};
+
+pub trait EngineResources {
+    fn get_instance(&self) -> &wgpu::Instance;
+    fn get_device(&self) -> &wgpu::Device;
+    fn get_queue(&self) -> &wgpu::Queue;
+    fn get_adapter(&self) -> &wgpu::Adapter;
+    fn get_surface(&self) -> &wgpu::Surface;
+    fn get_config(&self) -> &wgpu::SurfaceConfiguration;
+    fn resize(&mut self, width: u32, height: u32);
+}
+
+pub struct WebGPUResources {
+    canvas: HtmlCanvasElement,
+    instance: wgpu::Instance,
+    adapter: wgpu::Adapter,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    config: wgpu::SurfaceConfiguration,
+}
+
+impl WebGPUResources {
+    pub async fn new(canvas: HtmlCanvasElement) -> Result<Self, JsValue> {
+
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: Backends::PRIMARY,
+            dx12_shader_compiler: Default::default(),
+            flags: Default::default(),
+            gles_minor_version: Default::default()
+        });
+
+        let surface_target = wgpu::SurfaceTarget::Canvas(canvas.clone());
+        let surface = instance.create_surface(surface_target)
+        .map_err(|e| {
+            error!("Failed to create surface: {}", e);
+            JsValue::from_str(&format!("Could not create surface: {}", e)) 
+        })?;
+
+        let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::default(),
+            force_fallback_adapter: false,    
+            compatible_surface: Some(&surface),
+        })
+        .await
+        .ok_or_else(|| { 
+            let err_msg = "No Suitable GPU adapter found";
+            error!("{}", err_msg);
+            JsValue::from_str(err_msg)
+        })?;
+
+        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
+            label: None,
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::default(),
+            memory_hints: wgpu::MemoryHints::default(),
+            },
+        None,
+        ).await
+        .map_err(|e| { 
+            error!("Failed to create device: {}", e);
+            JsValue::from_str(&format!("Failed to create device: {}", e))
+        })?;
+
+        let surface_caps = surface.get_capabilities(&adapter);
+        let surface_format = surface_caps
+            .formats
+            .iter()
+            .copied()
+            .find(|f| f.is_srgb())
+            .unwrap_or(surface_caps.formats[0]);
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: surface_format,
+            width: canvas.width(),
+            height: canvas.height(),
+            present_mode: surface_caps.present_modes[0],
+            desired_maximum_frame_latency: 2,
+            alpha_mode: surface_caps.alpha_modes[0],
+            view_formats: vec![],
+        };
+        surface.configure(&device, &config);
+
+
+
+        Ok(Self {
+            canvas: canvas.clone(), 
+            instance, 
+            // surface, 
+            adapter, 
+            device, 
+            queue, 
+            config })
+    }
+}
+
+impl EngineResources for WebGPUResources {
+    fn get_instance(&self) -> &wgpu::Instance {
+        &self.instance
+    }
+
+    fn get_device(&self) -> &wgpu::Device {
+        &self.device
+    }
+
+    fn get_surface(&self) -> &wgpu::Surface {
+        let surface_target = wgpu::SurfaceTarget::Canvas(self.canvas.clone());
+        let surface = self.instance.create_surface(surface_target)
+            .expect("Failed to create surface");
+        let surface_box = Box::new(surface);
+        Box::leak(surface_box)
+    }
+    
+    fn get_queue(&self) -> &wgpu::Queue {
+        &self.queue
+    }
+
+    fn get_adapter(&self) -> &wgpu::Adapter {
+        &self.adapter
+    }
+
+    fn get_config(&self) -> &wgpu::SurfaceConfiguration {
+        &self.config
+    }
+
+    fn resize(&mut self, width: u32, height: u32) {
+        self.config.width = width;
+        self.config.height = height;
+        self.get_surface().configure(&self.device, &self. config);
+    }
+}
+
+--- D:\HIR\luminaengine\src\engine_core\world.rs ---
+
+// world.rs
+use crate::ecs_core::component::ComponentManager;
+use crate::ecs_core::resource::ResourceManager;
+use crate::ecs_core::entity::EntityManager;
+use crate::LuminaEngine;
+use std::rc::Rc;
+
+pub struct World<'a> {
+    pub entities: EntityManager,
+    pub components: ComponentManager,
+    pub resources: ResourceManager<'a>,
+}
+
+impl<'a> World<'a> {
+    pub fn new(engine: &'a LuminaEngine) -> Self {
+        let mut world = Self {
+            entities: EntityManager::new(),
+            components: ComponentManager::new(),
+            resources: ResourceManager::new(),
+        };
+
+        world.resources.insert(&engine.webgpu_resource);
+        world.resources.insert(&engine.temporal);
+        world.resources.insert(&engine.rendering);
+        world.resources.insert(&engine.networking);
+        world.resources.insert(&engine.inputhandler);
+        world.resources.insert(&engine.workers);
+
+        world
+    }
+}
+
+--- D:\HIR\luminaengine\src\systems\input_system.rs ---
+
+// input_system.rs
+use crate::engine_core::world::World;
+use crate::ecs_core::system::System;
+
+pub struct InputSystem {
+
+}
+
+impl InputSystem {
+    pub fn new() -> Self {
+        Self {
+        
+        }
+    }
+}
+
+impl System for InputSystem {
+    fn update(&mut self, dt: f32, world: &mut World) {
+        let dt = world.time.scaled_delta();
+        for (entity, input_component) in world.inputs.iter() {
+            
+        }
+    }
+}
+
+--- D:\HIR\luminaengine\src\systems\mod.rs ---
+
+pub mod input_system;

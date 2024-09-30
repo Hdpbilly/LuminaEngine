@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>WebGPU Test</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+        }
+        #canvas {
+            border: 2px solid black;
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script type="module">
+        const canvas = document.getElementById('canvas');
+        function resizeCanvas() {
+            // Set canvas drawing size to match the window size
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        // Initial resize to set the correct canvas size
+        resizeCanvas();
+
+        // Adjust the canvas size if the window is resized
+        window.addEventListener('resize', resizeCanvas);
+
+        // Your WebGPU rendering code here
+        import('./index.js');
+    </script>
+</body>
+</html>
