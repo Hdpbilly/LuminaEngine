@@ -4,6 +4,7 @@ mod engine_core;
 mod ecs_core;
 mod systems;
 mod tracing;
+use engine_core::core_loop::EngineLoop;
 use engine_core::wgpures::WebGPUResources;
 use engine_core::temporal::{self, AdvancedTime};
 use engine_core::networking::NetworkResources;
@@ -16,14 +17,19 @@ use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 use std::rc::Rc;
 
-
-pub struct LuminaEngine {
+pub struct EngineResources {
     pub webgpu_resource: WebGPUResources,
     pub temporal: AdvancedTime,
     pub rendering: RenderSystem,
     pub networking: NetworkResources,
     pub inputhandler: InputHandler,
     pub workers: WebWorker,
+}
+
+pub struct LuminaEngine {
+    resources: EngineResources,
+    coreloop: EngineLoop,
+    world: World,
 }
 
 impl LuminaEngine {
@@ -35,20 +41,22 @@ impl LuminaEngine {
         let inputhandler = InputHandler::new();
         let workers = WebWorker::new();
 
+    
+
         Self {
-            webgpu_resource,
-            temporal,
-            rendering,
-            networking,
-            inputhandler,
-            workers,
+
         }
+    }
+
+    pub fn test(& mut self) {
+        self.resources.temporal.update();
+        self.world.components.
     }
 }
 
 
 #[wasm_bindgen]
 pub async fn initalize_client(canvas: HtmlCanvasElement) {
-    let engine = Rc::new(LuminaEngine::new(canvas).await); 
+    let engine = LuminaEngine::new(canvas).await; 
     let world = World::new(&engine);
 }

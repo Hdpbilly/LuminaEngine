@@ -98,6 +98,18 @@ impl InputComponent {
 --- D:\HIR\luminaengine\src\components\mod.rs ---
 
 pub mod input_component;
+pub mod renderable_component;
+
+--- D:\HIR\luminaengine\src\components\renderable_component.rs ---
+
+pub struct RenderableComponenet {
+}
+
+impl RenderableComponenet {
+    pub fn new() -> Self {
+
+    }
+}
 
 --- D:\HIR\luminaengine\src\ecs_core\component.rs ---
 
@@ -191,8 +203,6 @@ impl ComponentManagerTrait for ComponentManager {
         self.get_mut::<C>(entity)
     }
 }
-
-
 
 pub struct ComponentStorage<C> {
     components: HashMap<Entity, C>,
@@ -315,17 +325,14 @@ use crate::ecs_core::system::System;
 use crate::engine_core::world::World;
 use crate::LuminaEngine;
 
-pub struct EngineLoop<'window> {
-    core: LuminaEngine<'window>,
-    systems: Vec<Box<dyn System>>,
-    world: World,
+pub struct EngineLoop<'a> {
+    core: &'a LuminaEngine,
+    world: &'a World<'a>,
 }
 
-impl<'window> EngineLoop<'window> {
-    pub fn new(core: LuminaEngine) -> Self {
-        let systems: Vec<Box<dyn System>> = vec![
-            Box::new(InputSystem::new()),
-        ];
+impl EngineLoop {
+    pub fn new(core: &LuminaEngine, world: &World) -> Self {
+
     }
 
     pub fn start(self) {
@@ -383,6 +390,14 @@ impl RenderSystem {
         Self { }
     }
 }
+
+--- D:\HIR\luminaengine\src\engine_core\render_graph.rs ---
+
+
+
+--- D:\HIR\luminaengine\src\engine_core\scene_graph.rs ---
+
+
 
 --- D:\HIR\luminaengine\src\engine_core\temporal.rs ---
 
@@ -726,29 +741,43 @@ impl EngineResources for WebGPUResources {
 use crate::ecs_core::component::ComponentManager;
 use crate::ecs_core::resource::ResourceManager;
 use crate::ecs_core::entity::EntityManager;
+use crate::ecs_core::system::System;
+use crate::systems::input_system::InputSystem;
+use crate::systems::rendering_system::RenderingSystem;
 use crate::LuminaEngine;
-use std::rc::Rc;
 
 pub struct World<'a> {
     pub entities: EntityManager,
     pub components: ComponentManager,
     pub resources: ResourceManager<'a>,
+    systems: Vec<Box<dyn System>>,
 }
 
 impl<'a> World<'a> {
     pub fn new(engine: &'a LuminaEngine) -> Self {
+        let systems: Vec<Box<dyn System>> = vec![
+            // Box::new(InputSystem::new()),
+            // Box::new(InputSystem::new()),
+            // Box::new(InputSystem::new()),
+        ];
         let mut world = Self {
             entities: EntityManager::new(),
             components: ComponentManager::new(),
             resources: ResourceManager::new(),
-        };
+            systems,
 
+        };
+        // resource initalization 
         world.resources.insert(&engine.webgpu_resource);
         world.resources.insert(&engine.temporal);
         world.resources.insert(&engine.rendering);
         world.resources.insert(&engine.networking);
         world.resources.insert(&engine.inputhandler);
         world.resources.insert(&engine.workers);
+
+        // system initalization
+        world.systems.push(Box::new(InputSystem::new()));
+        // world.systems.push(Box::new(RenderingSystem::new()));
 
         world
     }
@@ -784,3 +813,18 @@ impl System for InputSystem {
 --- D:\HIR\luminaengine\src\systems\mod.rs ---
 
 pub mod input_system;
+pub mod rendering_system;
+
+--- D:\HIR\luminaengine\src\systems\rendering_system.rs ---
+
+use crate::ecs_core::system::System;
+use crate::engine_core::world::World;
+
+pub struct RenderingSystem;
+
+impl RenderingSystem {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
